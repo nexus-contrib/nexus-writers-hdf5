@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(TargetFrameworkVersion)</TargetFramework>
+    <RestoreAdditionalProjectSources>
+      https://www.myget.org/F/apollo3zehn-dev/api/v3/index.json
+    </RestoreAdditionalProjectSources>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nexus.Extensibility" Version="1.0.0-beta.11.205">
+      <ExcludeAssets>runtime;native</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="HDF.PInvoke.1.10" Version="1.10.612" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Resources\ErrorMessage.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>ErrorMessage.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\ErrorMessage.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>ErrorMessage.Designer.cs</LastGenOutput>
+      <CustomToolNamespace>Nexus.Writers</CustomToolNamespace>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
