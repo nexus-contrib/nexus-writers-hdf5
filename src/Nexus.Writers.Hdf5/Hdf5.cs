@@ -239,7 +239,7 @@ namespace Nexus.Writers
                 }
 
                 // file -> catalog -> resource -> representation
-                datasetId = OpenOrCreateRepresentation(groupId, $"dataset_{catalogItem.Representation.Id}", chunkLength, chunkCount).DatasetId;
+                datasetId = OpenOrCreateRepresentation(groupId, $"dataset_{catalogItem.Representation.Id}{GetRepresentationParameterString(catalogItem.Parameters)}", chunkLength, chunkCount).DatasetId;
             }
             finally
             {
@@ -317,6 +317,19 @@ namespace Nexus.Writers
                 if (H5I.is_valid(typeId) > 0) { _ = H5T.close(typeId); }
                 if (H5I.is_valid(attributeId) > 0) { _ = H5A.close(attributeId); }
             }
+        }
+
+        private static string? GetRepresentationParameterString(IReadOnlyDictionary<string, string>? parameters)
+        {
+            if (parameters is null)
+                return default;
+            
+            var serializedParameters = parameters
+                .Select(parameter => $"{parameter.Key}={parameter.Value}");
+
+            var parametersString = $"({string.Join(',', serializedParameters)})";
+
+            return parametersString;
         }
 
         #endregion
