@@ -189,7 +189,7 @@ namespace Nexus.Writers
                 var length = (ulong)writeRequest.Data.Length;
                 groupId = H5G.open(_fileId, $"/{catalogPhysicalId}/{writeRequest.CatalogItem.Resource.Id}");
 
-                var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}";
+                var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}{GetRepresentationParameterString(writeRequest.CatalogItem.Parameters)}";
                 datasetId = H5D.open(groupId, datasetName);
                 dataspaceId = H5D.get_space(datasetId);
                 dataspaceId_Buffer = H5S.create_simple(1, new ulong[] { length }, null);
