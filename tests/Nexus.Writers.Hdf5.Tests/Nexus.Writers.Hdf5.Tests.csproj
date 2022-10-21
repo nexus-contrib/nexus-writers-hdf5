@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageReference Include="HDF5.NET" Version="1.0.0-alpha.11.final" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.0.0" />
-    <PackageReference Include="Nexus.Extensibility" Version="1.0.0-beta.11.205" />
+    <PackageReference Include="Nexus.Extensibility" Version="1.0.0-beta.11.252" />
     <PackageReference Include="xunit" Version="2.4.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3">
       <PrivateAssets>all</PrivateAssets>

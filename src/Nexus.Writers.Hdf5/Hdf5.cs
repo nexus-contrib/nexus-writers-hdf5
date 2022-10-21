@@ -101,10 +101,10 @@ namespace Nexus.Writers
                             groupId = IOHelper.OpenOrCreateGroup(_fileId, physicalId).GroupId;
 
                             // file -> catalog -> properties
-                            if (catalog.Properties.HasValue)
+                            if (catalog.Properties is not null)
                             {
                                 var key = "properties";
-                                var value = JsonSerializer.Serialize(catalog.Properties.Value, _serializerOptions);
+                                var value = JsonSerializer.Serialize(catalog.Properties, _serializerOptions);
 
                                 PrepareStringAttribute(groupId, key, value);
                             }
@@ -230,10 +230,10 @@ namespace Nexus.Writers
                 groupId = IOHelper.OpenOrCreateGroup(locationId, catalogItem.Resource.Id).GroupId;
 
                 // file -> catalog -> resource -> properties
-                if (catalogItem.Resource.Properties.HasValue)
+                if (catalogItem.Resource.Properties is not null)
                 {
                     var key = "properties";
-                    var value = JsonSerializer.Serialize(catalogItem.Resource.Properties.Value, _serializerOptions);
+                    var value = JsonSerializer.Serialize(catalogItem.Resource.Properties, _serializerOptions);
 
                     PrepareStringAttribute(groupId, key, value);
                 }

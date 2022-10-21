@@ -32,7 +32,7 @@ namespace Nexus.Writers.Tests
             var samplePeriod = TimeSpan.FromSeconds(1);
 
             var catalogItems = _fixture.Catalogs.SelectMany(catalog => catalog.Resources!
-                .SelectMany(resource => resource.Representations!.Select(representation => new CatalogItem(catalog, resource, representation))))
+                .SelectMany(resource => resource.Representations!.Select(representation => new CatalogItem(catalog, resource, representation, default))))
                 .ToArray();
 
             var random = new Random(Seed: 1);
