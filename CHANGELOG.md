@@ -1,3 +1,7 @@
+## v2.0.0-beta.2 - 2023-09-15
+
+Switch to PureHDF v1.0.0-beta.2 to remove all native dependencies.
+
 ## v2.0.0-beta.1 - 2023-04-24
 
 Follow Nexus changes.

@@ -167,25 +167,7 @@ namespace Nexus.Writers {
                 return ResourceManager.GetString("Hdf5Writer_ChunkAlreadyWritten", resourceCulture);
             }
         }
-        
-        /// <summary>
-        ///   Sucht eine lokalisierte Zeichenfolge, die Could not open or create file. ähnelt.
-        /// </summary>
-        internal static string Hdf5Writer_CouldNotOpenOrCreateFile {
-            get {
-                return ResourceManager.GetString("Hdf5Writer_CouldNotOpenOrCreateFile", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Sucht eine lokalisierte Zeichenfolge, die Could not write chunk (dataset). ähnelt.
-        /// </summary>
-        internal static string Hdf5Writer_CouldNotWriteChunk_Dataset {
-            get {
-                return ResourceManager.GetString("Hdf5Writer_CouldNotWriteChunk_Dataset", resourceCulture);
-            }
-        }
-        
+                        
         /// <summary>
         ///   Sucht eine lokalisierte Zeichenfolge, die Could not write chunk (dataset status). ähnelt.
         /// </summary>

@@ -6,10 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Nexus.Extensibility" Version="2.0.0-beta.8">
+    <PackageReference Include="Nexus.Extensibility" Version="2.0.0-beta.15">
       <ExcludeAssets>runtime;native</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="HDF.PInvoke.1.10" Version="1.10.612" />
+    <PackageReference Include="PureHDF" Version="1.0.0-beta.2" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,10 @@
-﻿using HDF.PInvoke;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Nexus.DataModel;
 using Nexus.Extensibility;
+using PureHDF;
+using PureHDF.Filters;
+using PureHDF.Selections;
+using PureHDF.VOL.Native;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -22,7 +25,7 @@ namespace Nexus.Writers
 }
         ";
 
-        private long _fileId = -1;
+        private H5NativeWriter? _writer;
         private TimeSpan _lastSamplePeriod;
         private static readonly JsonSerializerOptions _serializerOptions;
 
@@ -75,57 +78,48 @@ namespace Nexus.Writers
                 if (File.Exists(filePath))
                     throw new Exception($"The file {filePath} already exists. Extending an already existing file with additional resources is not supported.");
 
-                try
+                var h5File = new H5File();
+
+                // file
+                h5File.Attributes["date_time"] = fileBegin.ToString("yyyy-MM-ddTHH-mm-ssZ");
+                h5File.Attributes["sample_period"] = samplePeriod.ToUnitString();
+
+                foreach (var catalogItemGroup in catalogItems.GroupBy(catalogItem => catalogItem.Catalog))
                 {
-                    _fileId = H5F.create(filePath, H5F.ACC_TRUNC);
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    if (_fileId < 0)
-                        throw new Exception($"{ErrorMessage.Hdf5Writer_CouldNotOpenOrCreateFile} File: {filePath}.");
+                    // file -> catalog
+                    var catalog = catalogItemGroup.Key;
+                    var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
+                    var catalogGroup = new H5Group();
 
-                    // file
-                    PrepareStringAttribute(_fileId, "date_time", fileBegin.ToString("yyyy-MM-ddTHH-mm-ssZ"));
-                    PrepareStringAttribute(_fileId, "sample_period", samplePeriod.ToUnitString());
-
-                    foreach (var catalogItemGroup in catalogItems.GroupBy(catalogItem => catalogItem.Catalog))
+                    // file -> catalog -> properties
+                    if (catalog.Properties is not null)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
+                        var key = "properties";
+                        var value = JsonSerializer.Serialize(catalog.Properties, _serializerOptions);
 
-                        // file -> catalog
-                        var catalog = catalogItemGroup.Key;
-                        var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
-
-                        long groupId = -1;
-
-                        try
-                        {
-                            groupId = IOHelper.OpenOrCreateGroup(_fileId, physicalId).GroupId;
-
-                            // file -> catalog -> properties
-                            if (catalog.Properties is not null)
-                            {
-                                var key = "properties";
-                                var value = JsonSerializer.Serialize(catalog.Properties, _serializerOptions);
-
-                                PrepareStringAttribute(groupId, key, value);
-                            }
-
-                            // file -> catalog -> resources
-                            foreach (var catalogItem in catalogItemGroup)
-                            {
-                                (var chunkLength, var chunkCount) = GeneralHelper.CalculateChunkParameters(totalLength);
-                                PrepareResource(groupId, catalogItem, chunkLength, chunkCount);
-                            }
-                        }
-                        finally
-                        {
-                            if (H5I.is_valid(groupId) > 0) { _ = H5G.close(groupId); }
-                        }
+                        catalogGroup.Attributes[key] = value;
                     }
+
+                    // file -> catalog -> resources
+                    foreach (var groupedByResourceId in catalogItemGroup.GroupBy(catalogItem => catalogItem.Resource.Id))
+                    {
+                        var resourceGroup = new H5Group();
+
+                        foreach (var catalogItem in groupedByResourceId)
+                        {
+                            (var chunkLength, var chunkCount) = GeneralHelper.CalculateChunkParameters(totalLength);
+                            PrepareResource(resourceGroup, catalogItem, chunkLength, chunkCount);
+                        }
+
+                        catalogGroup[groupedByResourceId.Key] = resourceGroup;
+                    }
+
+                    h5File[physicalId] = catalogGroup;
                 }
-                finally
-                {
-                    _ = H5F.flush(_fileId, H5F.scope_t.GLOBAL);
-                }
+
+                _writer = h5File.BeginWrite(filePath);
             }, cancellationToken);
         }
 
@@ -137,186 +131,88 @@ namespace Nexus.Writers
         {
             return Task.Run(() =>
             {
-                try
+                if (_writer is null)
+                    return;
+
+                var offset = (ulong)(fileOffset.Ticks / _lastSamplePeriod.Ticks);
+
+                var requestGroups = requests
+                    .GroupBy(request => request.CatalogItem.Catalog)
+                    .ToList();
+
+                var processed = 0;
+
+                foreach (var requestGroup in requestGroups)
                 {
-                    var offset = (ulong)(fileOffset.Ticks / _lastSamplePeriod.Ticks);
+                    var catalog = requestGroup.Key;
+                    var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
+                    var writeRequests = requestGroup.ToArray();
 
-                    var requestGroups = requests
-                        .GroupBy(request => request.CatalogItem.Catalog)
-                        .ToList();
-
-                    var processed = 0;
-
-                    foreach (var requestGroup in requestGroups)
+                    for (int i = 0; i < writeRequests.Length; i++)
                     {
-                        var catalog = requestGroup.Key;
-                        var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
-                        var writeRequests = requestGroup.ToArray();
-
-                        for (int i = 0; i < writeRequests.Length; i++)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            WriteData(physicalId, offset, writeRequests[i]);
-                        }
-
-                        processed++;
-                        progress.Report((double)processed / requests.Length);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        WriteData(_writer, physicalId, offset, writeRequests[i]);
                     }
-                }
-                finally
-                {
-                    _ = H5F.flush(_fileId, H5F.scope_t.GLOBAL);
+
+                    processed++;
+                    progress.Report((double)processed / requests.Length);
                 }
             }, cancellationToken);
         }
 
         public Task CloseAsync(CancellationToken cancellationToken)
         {
-            if (H5I.is_valid(_fileId) > 0) { _ = H5F.close(_fileId); }
+            _writer?.Dispose();
 
             return Task.CompletedTask;
         }
 
-        private unsafe void WriteData(string catalogPhysicalId, ulong fileOffset, WriteRequest writeRequest)
+        private unsafe void WriteData(H5NativeWriter writer, string catalogPhysicalId, ulong fileOffset, WriteRequest writeRequest)
         {
-            long groupId = -1;
-            long datasetId = -1;
-            long dataspaceId = -1;
-            long dataspaceId_Buffer = -1;
+            var length = (ulong)writeRequest.Data.Length;
+            var catalogGroup = (H5Group)writer.File[catalogPhysicalId];
+            var resourceGroup = (H5Group)catalogGroup[writeRequest.CatalogItem.Resource.Id];
+            var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}{GetRepresentationParameterString(writeRequest.CatalogItem.Parameters)}";
+            var dataset = (H5Dataset<Memory<double>>)resourceGroup[datasetName];
+            var hyperslab = new HyperslabSelection(fileOffset, length);
 
-            try
+            writer.Write(
+                dataset: dataset,
+                data: MemoryMarshal.AsMemory(writeRequest.Data) /* PureHDF does not yet support ReadOnlyMemory (v1.0.0-beta.2) */,
+                fileSelection: hyperslab);
+        }
+
+        private static void PrepareResource(H5Group resourceGroup, CatalogItem catalogItem, uint chunkLength, ulong chunkCount)
+        {
+            if (chunkLength <= 0)
+                throw new Exception(ErrorMessage.Hdf5Writer_SampleRateTooLow);
+
+            // file -> catalog -> resource -> properties
+            if (catalogItem.Resource.Properties is not null)
             {
-                var length = (ulong)writeRequest.Data.Length;
-                groupId = H5G.open(_fileId, $"/{catalogPhysicalId}/{writeRequest.CatalogItem.Resource.Id}");
+                var key = "properties";
+                var value = JsonSerializer.Serialize(catalogItem.Resource.Properties, _serializerOptions);
 
-                var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}{GetRepresentationParameterString(writeRequest.CatalogItem.Parameters)}";
-                datasetId = H5D.open(groupId, datasetName);
-                dataspaceId = H5D.get_space(datasetId);
-                dataspaceId_Buffer = H5S.create_simple(1, new ulong[] { length }, null);
+                resourceGroup.Attributes[key] = value;
+            }
 
-                // dataset
-                _ = H5S.select_hyperslab(dataspaceId,
-                                    H5S.seloper_t.SET,
-                                    new ulong[] { fileOffset },
-                                    new ulong[] { 1 },
-                                    new ulong[] { 1 },
-                                    new ulong[] { length });
-
-                fixed (byte* bufferPtr = MemoryMarshal.AsBytes(writeRequest.Data.Span))
+            // file -> catalog -> resource -> representation
+            var datasetCreation = new H5DatasetCreation(
+                Filters: new()
                 {
-                    if (H5D.write(datasetId, H5T.NATIVE_DOUBLE, dataspaceId_Buffer, dataspaceId, H5P.DEFAULT, new IntPtr(bufferPtr)) < 0)
-                        throw new Exception(ErrorMessage.Hdf5Writer_CouldNotWriteChunk_Dataset);
+                    ShuffleFilter.Id,
+                    DeflateFilter.Id
                 }
-            }
-            finally
-            {
-                if (H5I.is_valid(groupId) > 0) { _ = H5G.close(groupId); }
-                if (H5I.is_valid(datasetId) > 0) { _ = H5D.close(datasetId); }
-                if (H5I.is_valid(dataspaceId) > 0) { _ = H5S.close(dataspaceId); }
-                if (H5I.is_valid(dataspaceId_Buffer) > 0) { _ = H5S.close(dataspaceId_Buffer); }
-            }
-        }
+            );
 
-        private static void PrepareResource(long locationId, CatalogItem catalogItem, ulong chunkLength, ulong chunkCount)
-        {
-            long groupId = -1;
-            long datasetId = -1;
+            var representation = new H5Dataset<Memory<double>>(
+                fileDims: new ulong[] { chunkLength * chunkCount },
+                chunks: new uint[] { chunkLength },
+                datasetCreation: datasetCreation );
 
-            try
-            {
-                if (chunkLength <= 0)
-                    throw new Exception(ErrorMessage.Hdf5Writer_SampleRateTooLow);
+            var datasetName = $"dataset_{catalogItem.Representation.Id}{GetRepresentationParameterString(catalogItem.Parameters)}";
 
-                groupId = IOHelper.OpenOrCreateGroup(locationId, catalogItem.Resource.Id).GroupId;
-
-                // file -> catalog -> resource -> properties
-                if (catalogItem.Resource.Properties is not null)
-                {
-                    var key = "properties";
-                    var value = JsonSerializer.Serialize(catalogItem.Resource.Properties, _serializerOptions);
-
-                    PrepareStringAttribute(groupId, key, value);
-                }
-
-                // file -> catalog -> resource -> representation
-                datasetId = OpenOrCreateRepresentation(groupId, $"dataset_{catalogItem.Representation.Id}{GetRepresentationParameterString(catalogItem.Parameters)}", chunkLength, chunkCount).DatasetId;
-            }
-            finally
-            {
-                if (H5I.is_valid(groupId) > 0) { _ = H5G.close(groupId); }
-                if (H5I.is_valid(datasetId) > 0) { _ = H5D.close(datasetId); }
-            }
-        }
-
-        // low level
-        private static (long DatasetId, bool IsNew) OpenOrCreateRepresentation(long locationId, string name, ulong chunkLength, ulong chunkCount)
-        {
-            long datasetId = -1;
-            GCHandle gcHandle_fillValue = default;
-            bool isNew;
-
-            try
-            {
-                var fillValue = Double.NaN;
-                gcHandle_fillValue = GCHandle.Alloc(fillValue, GCHandleType.Pinned);
-
-                (datasetId, isNew) = IOHelper.OpenOrCreateDataset(locationId, name, H5T.NATIVE_DOUBLE, chunkLength, chunkCount, gcHandle_fillValue.AddrOfPinnedObject());
-            }
-            catch (Exception)
-            {
-                if (H5I.is_valid(datasetId) > 0) { _ = H5D.close(datasetId); }
-
-                throw;
-            }
-            finally
-            {
-                if (gcHandle_fillValue.IsAllocated)
-                    gcHandle_fillValue.Free();
-            }
-
-            return (datasetId, isNew);
-        }
-
-        private static void PrepareStringAttribute(long locationId, string name, string value)
-        {
-            long typeId = -1;
-            long attributeId = -1;
-
-            bool isNew;
-
-            try
-            {
-                var classNamePtr = Marshal.StringToHGlobalAnsi(value);
-
-                typeId = H5T.copy(H5T.C_S1);
-                _ = H5T.set_size(typeId, new IntPtr(value.Length));
-
-                (attributeId, isNew) = IOHelper.OpenOrCreateAttribute(locationId, name, typeId, () =>
-                {
-                    long dataspaceId = -1;
-                    long localAttributeId = -1;
-
-                    try
-                    {
-                        dataspaceId = H5S.create(H5S.class_t.SCALAR);
-                        localAttributeId = H5A.create(locationId, name, typeId, dataspaceId);
-                    }
-                    finally
-                    {
-                        if (H5I.is_valid(dataspaceId) > 0) { _ = H5S.close(dataspaceId); }
-                    }
-
-                    return localAttributeId;
-                });
-
-                if (isNew)
-                    _ = H5A.write(attributeId, typeId, classNamePtr);
-            }
-            finally
-            {
-                if (H5I.is_valid(typeId) > 0) { _ = H5T.close(typeId); }
-                if (H5I.is_valid(attributeId) > 0) { _ = H5A.close(attributeId); }
-            }
+            resourceGroup[datasetName] = representation;
         }
 
         private static string? GetRepresentationParameterString(IReadOnlyDictionary<string, string>? parameters)

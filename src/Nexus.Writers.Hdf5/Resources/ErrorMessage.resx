@@ -153,12 +153,6 @@
   <data name="Hdf5Writer_ChunkAlreadyWritten" xml:space="preserve">
     <value>The current chunk has already been written before. Possible causes are sudden negative time changes while Nexus was not running.</value>
   </data>
-  <data name="Hdf5Writer_CouldNotOpenOrCreateFile" xml:space="preserve">
-    <value>Could not open or create file.</value>
-  </data>
-  <data name="Hdf5Writer_CouldNotWriteChunk_Dataset" xml:space="preserve">
-    <value>Could not write chunk (dataset).</value>
-  </data>
   <data name="Hdf5Writer_CouldNotWriteChunk_Status" xml:space="preserve">
     <value>Could not write chunk (dataset status).</value>
   </data>
