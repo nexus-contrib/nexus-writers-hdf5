@@ -70,13 +70,14 @@ public class Hdf5 : IDataWriter
             h5File.Attributes["date_time"] = fileBegin.ToString("yyyy-MM-ddTHH-mm-ssZ");
             h5File.Attributes["sample_period"] = samplePeriod.ToUnitString();
 
-            foreach (var catalogItemGroup in catalogItems.GroupBy(catalogItem => catalogItem.Catalog))
+            foreach (var catalogItemGroup in catalogItems.GroupBy(catalogItem => catalogItem.Catalog.Id))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // file -> catalog
-                var catalog = catalogItemGroup.Key;
-                var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
+                var catalogId = catalogItemGroup.Key;
+                var physicalId = catalogId.TrimStart('/').Replace('/', '_');
+                var catalog = catalogItemGroup.First().Catalog;
                 var catalogGroup = new H5Group();
 
                 // file -> catalog -> properties
@@ -123,15 +124,15 @@ public class Hdf5 : IDataWriter
             var offset = (ulong)(fileOffset.Ticks / _lastSamplePeriod.Ticks);
 
             var requestGroups = requests
-                .GroupBy(request => request.CatalogItem.Catalog)
+                .GroupBy(request => request.CatalogItem.Catalog.Id)
                 .ToList();
 
             var processed = 0;
 
             foreach (var requestGroup in requestGroups)
             {
-                var catalog = requestGroup.Key;
-                var physicalId = catalog.Id.TrimStart('/').Replace('/', '_');
+                var catalogId = requestGroup.Key;
+                var physicalId = catalogId.TrimStart('/').Replace('/', '_');
                 var writeRequests = requestGroup.ToArray();
 
                 for (int i = 0; i < writeRequests.Length; i++)
