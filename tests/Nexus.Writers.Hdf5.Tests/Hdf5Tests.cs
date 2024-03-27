@@ -71,7 +71,7 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
             .ToArray();
 
         // assert
-        Assert.Equal(1, actualFilePaths.Length);
+        Assert.Single(actualFilePaths);
 
         using var h5File = H5File.OpenRead(actualFilePaths.First());
 
