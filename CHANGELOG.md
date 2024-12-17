@@ -1,3 +1,7 @@
+## v2.0.0-beta.33 - 2024-12-17
+
+- Follow Nexus changes.
+
 ## v2.0.0-beta.27 - 2024-03-27
 
 - Bump PureHDF dependency which fixes a critical bug.
