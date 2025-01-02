@@ -23,7 +23,7 @@ public class Hdf5 : IDataWriter
     }
     """;
 
-    private H5NativeWriter? _writer;
+    private H5NativeWriter _writer = default!;
     private TimeSpan _lastSamplePeriod;
     private static readonly JsonSerializerOptions _serializerOptions;
 
@@ -96,7 +96,7 @@ public class Hdf5 : IDataWriter
 
                     foreach (var catalogItem in groupedByResourceId)
                     {
-                        (var chunkLength, var chunkCount) = GeneralHelper.CalculateChunkParameters(totalLength);
+                        (var chunkLength, var chunkCount) = Utils.CalculateChunkParameters(totalLength);
                         PrepareResource(resourceGroup, catalogItem, chunkLength, chunkCount);
                     }
 
@@ -118,9 +118,6 @@ public class Hdf5 : IDataWriter
     {
         return Task.Run(() =>
         {
-            if (_writer is null)
-                return;
-
             var offset = (ulong)(fileOffset.Ticks / _lastSamplePeriod.Ticks);
 
             var requestGroups = requests
@@ -154,25 +151,25 @@ public class Hdf5 : IDataWriter
         return Task.CompletedTask;
     }
 
-    private static void WriteData(H5NativeWriter writer, string catalogPhysicalId, ulong fileOffset, WriteRequest writeRequest)
+    private static void WriteData(H5NativeWriter writer, string physicalCatalogId, ulong fileOffset, WriteRequest writeRequest)
     {
         var length = (ulong)writeRequest.Data.Length;
-        var catalogGroup = (H5Group)writer.File[catalogPhysicalId];
+        var catalogGroup = (H5Group)writer.File[physicalCatalogId];
         var resourceGroup = (H5Group)catalogGroup[writeRequest.CatalogItem.Resource.Id];
         var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}{GetRepresentationParameterString(writeRequest.CatalogItem.Parameters)}";
         var dataset = (H5Dataset<Memory<double>>)resourceGroup[datasetName];
-        var hyperslab = new HyperslabSelection(fileOffset, length);
+        var selection = new HyperslabSelection(fileOffset, length);
 
         writer.Write(
             dataset: dataset,
-            data: MemoryMarshal.AsMemory(writeRequest.Data) /* PureHDF does not yet support ReadOnlyMemory (v1.0.0-beta.2) */,
-            fileSelection: hyperslab);
+            data: MemoryMarshal.AsMemory(writeRequest.Data) /* PureHDF does not yet support ReadOnlyMemory (v2.1.1) */,
+            fileSelection: selection);
     }
 
     private static void PrepareResource(H5Group resourceGroup, CatalogItem catalogItem, uint chunkLength, ulong chunkCount)
     {
         if (chunkLength <= 0)
-            throw new Exception(ErrorMessage.Hdf5Writer_SampleRateTooLow);
+            throw new Exception("The sample rate is too low.");
 
         // file -> catalog -> resource -> properties
         if (catalogItem.Resource.Properties is not null)

@@ -1,6 +1,6 @@
 ﻿namespace Nexus.Writers;
 
-public static class GeneralHelper
+public static class Utils
 {
     public static (uint, ulong) CalculateChunkParameters(ulong totalLength)
     {
