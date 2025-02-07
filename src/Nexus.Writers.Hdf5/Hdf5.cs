@@ -24,7 +24,9 @@ public class Hdf5 : IDataWriter
     """;
 
     private H5NativeWriter _writer = default!;
+
     private TimeSpan _lastSamplePeriod;
+    
     private static readonly JsonSerializerOptions _serializerOptions;
 
     static Hdf5()

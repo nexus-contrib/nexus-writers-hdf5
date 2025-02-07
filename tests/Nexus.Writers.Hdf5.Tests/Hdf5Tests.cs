@@ -22,7 +22,6 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
 
         var context = new DataWriterContext(
             ResourceLocator: new Uri(targetFolder),
-            SystemConfiguration: default!,
             RequestConfiguration: default!);
 
         await dataWriter.SetContextAsync(context, NullLogger.Instance, CancellationToken.None);
