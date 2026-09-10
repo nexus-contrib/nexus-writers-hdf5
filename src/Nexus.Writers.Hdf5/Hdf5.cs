@@ -116,7 +116,8 @@ public class Hdf5 : IDataWriter
         TimeSpan fileOffset,
         WriteRequest[] requests,
         IProgress<double> progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         return Task.Run(() =>
         {
@@ -153,22 +154,48 @@ public class Hdf5 : IDataWriter
         return Task.CompletedTask;
     }
 
-    private static void WriteData(H5NativeWriter writer, string physicalCatalogId, ulong fileOffset, WriteRequest writeRequest)
+    private void WriteData(H5NativeWriter writer, string physicalCatalogId, ulong fileOffset, WriteRequest writeRequest)
     {
-        var length = (ulong)writeRequest.Data.Length;
         var catalogGroup = (H5Group)writer.File[physicalCatalogId];
         var resourceGroup = (H5Group)catalogGroup[writeRequest.CatalogItem.Resource.Id];
         var datasetName = $"dataset_{writeRequest.CatalogItem.Representation.Id}{GetRepresentationParameterString(writeRequest.CatalogItem.Parameters)}";
-        var dataset = (H5Dataset<Memory<double>>)resourceGroup[datasetName];
-        var selection = new HyperslabSelection(fileOffset, length);
 
-        writer.Write(
-            dataset: dataset,
-            data: MemoryMarshal.AsMemory(writeRequest.Data) /* PureHDF does not yet support ReadOnlyMemory (v2.1.1) */,
-            fileSelection: selection);
+        switch (Context.Precision)
+        {
+            case Precision.Float32:
+
+                var dataset1 = (H5Dataset<Memory<float>>)resourceGroup[datasetName];
+                var data1 = new CastMemoryManager<byte, float>(MemoryMarshal.AsMemory(writeRequest.Data)).Memory;
+                var selection1 = new HyperslabSelection(fileOffset, (ulong)data1.Length);
+
+                writer.Write(
+                    dataset: dataset1,
+                    data: data1,
+                    fileSelection: selection1
+                );
+
+                break;
+
+            case Precision.Float64:
+
+                var dataset2 = (H5Dataset<Memory<double>>)resourceGroup[datasetName];
+                var data2 = new CastMemoryManager<byte, double>(MemoryMarshal.AsMemory(writeRequest.Data)).Memory;
+                var selection2 = new HyperslabSelection(fileOffset, (ulong)data2.Length);
+
+                writer.Write(
+                    dataset: dataset2,
+                    data: data2,
+                    fileSelection: selection2
+                );
+
+                break;
+
+            default:
+                throw new NotSupportedException($"The precision {Context.Precision} is not supported.");
+        }
     }
 
-    private static void PrepareResource(H5Group resourceGroup, CatalogItem catalogItem, uint chunkLength, ulong chunkCount)
+    private void PrepareResource(H5Group resourceGroup, CatalogItem catalogItem, uint chunkLength, ulong chunkCount)
     {
         if (chunkLength <= 0)
             throw new Exception("The sample rate is too low.");
@@ -191,14 +218,28 @@ public class Hdf5 : IDataWriter
             ]
         );
 
-        var representation = new H5Dataset<Memory<double>>(
-            fileDims: [chunkLength * chunkCount],
-            chunks: [chunkLength],
-            datasetCreation: datasetCreation);
-
         var datasetName = $"dataset_{catalogItem.Representation.Id}{GetRepresentationParameterString(catalogItem.Parameters)}";
 
-        resourceGroup[datasetName] = representation;
+        resourceGroup[datasetName] = Context.Precision switch
+        {
+            Precision.Float32 =>
+
+                new H5Dataset<Memory<float>>(
+                    fileDims: [chunkLength * chunkCount],
+                    chunks: [chunkLength],
+                    datasetCreation: datasetCreation
+                ),
+
+            Precision.Float64 =>
+
+                new H5Dataset<Memory<double>>(
+                    fileDims: [chunkLength * chunkCount],
+                    chunks: [chunkLength],
+                    datasetCreation: datasetCreation
+                ),
+
+            _ => throw new NotSupportedException($"The precision {Context.Precision} is not supported.")
+        };
     }
 
     private static string? GetRepresentationParameterString(IReadOnlyDictionary<string, string>? parameters)

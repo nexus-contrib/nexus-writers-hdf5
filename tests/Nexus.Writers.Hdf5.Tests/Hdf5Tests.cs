@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nexus.DataModel;
@@ -22,7 +23,9 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
 
         var context = new DataWriterContext(
             ResourceLocator: new Uri(targetFolder),
-            RequestConfiguration: default!);
+            Precision: Precision.Float32,
+            RequestConfiguration: default!
+        );
 
         await dataWriter.SetContextAsync(context, NullLogger.Instance, CancellationToken.None);
 
@@ -41,22 +44,22 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
         {
             Enumerable
                 .Range(0, length)
-                .Select(value => random.NextDouble() * 1e4)
+                .Select(value => (float)(random.NextDouble() * 1e4))
                 .ToArray(),
 
             Enumerable
                 .Range(0, length)
-                .Select(value => random.NextDouble() * -1)
+                .Select(value => (float)(random.NextDouble() * -1))
                 .ToArray(),
 
             Enumerable
                 .Range(0, length)
-                .Select(value => random.NextDouble() * Math.PI)
+                .Select(value => (float)(random.NextDouble() * Math.PI))
                 .ToArray()
         };
 
         var requests = catalogItems
-            .Select((catalogItem, i) => new WriteRequest(catalogItem, data[i]))
+            .Select((catalogItem, i) => new WriteRequest(catalogItem, MemoryMarshal.Cast<float, byte>(data[i]).ToArray()))
             .ToArray();
 
         await dataWriter.OpenAsync(begin, TimeSpan.FromSeconds(2000), samplePeriod, catalogItems, CancellationToken.None);
@@ -94,14 +97,14 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
         var actualData0 = catalog1
             .Group("resource1")
             .Dataset("dataset_1_s")
-            .Read<double[]>();
+            .Read<float[]>();
 
         Assert.True(data[0].Concat(data[0]).SequenceEqual(actualData0));
 
         var actualData1 = catalog1
             .Group("resource1")
             .Dataset("dataset_2_s")
-            .Read<double[]>();
+            .Read<float[]>();
 
         Assert.True(data[1].Concat(data[1]).SequenceEqual(actualData1));
 
@@ -123,7 +126,7 @@ public class Hdf5Tests(DataWriterFixture fixture) : IClassFixture<DataWriterFixt
         var actualData2 = catalog2
             .Group("resource3")
             .Dataset("dataset_1_s")
-            .Read<double[]>();
+            .Read<float[]>();
 
         Assert.True(data[2].Concat(data[2]).SequenceEqual(actualData2));
     }
